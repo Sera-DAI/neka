@@ -1,0 +1,33 @@
+# Segredos e chaves
+*.env
+.env*
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Cofres e dados reais nunca vao para o Git
+*.neka
+*.neka.bak
+*.neka.tmp
+*.kdbx
+*.csv.bak
+backups/
+exports/
+
+# Rust
+target/
+**/*.rs.bk
+
+# Editores e sistema
+.vscode/
+.idea/
+*.swp
+Thumbs.db
+.DS_Store
+*.neka.lock
+*.neka.*.tmp
+
+# Python (scripts de desenvolvimento)
+__pycache__/
+*.pyc

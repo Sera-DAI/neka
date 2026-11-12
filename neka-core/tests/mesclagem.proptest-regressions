@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc dcabcdc4538b911b9e1585a23bd4fafd8a4b87f95ee27b9e5311f627ab6fc52c # shrinks to a = Corpo { schema: 1, device_clock: 3, entries: [Entrada { id: 02020202-0202-0202-0202-020202020202, clock: 3, device_id: 66666666-6666-6666-6666-666666666666, segredos: "<ocultos>" }], tombstones: [] }, b = Corpo { schema: 1, device_clock: 0, entries: [Entrada { id: 02020202-0202-0202-0202-020202020202, clock: 0, device_id: 64646464-6464-6464-6464-646464646464, segredos: "<ocultos>" }], tombstones: [] }, c = Corpo { schema: 1, device_clock: 0, entries: [], tombstones: [Lapide { id: 02020202-0202-0202-0202-020202020202, deleted_at: 0, clock: 0, device_id: 64646464-6464-6464-6464-646464646464 }] }

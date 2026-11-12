@@ -1,0 +1,27 @@
+[package]
+name = "neka-core"
+description = "Núcleo do neka: modelo, criptografia, armazenamento e API"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+argon2 = { version = "0.6.0", features = ["zeroize"] }
+chacha20poly1305 = { version = "0.11.0", features = ["zeroize"] }
+ciborium = "0.2.2"
+csv = "1.4"
+getrandom = "0.4.3"
+hkdf = "0.13.0"
+keepass = { version = "0.17", features = ["save_kdbx4"] }
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = "0.11.1"
+uuid = { version = "1.29.2", features = ["serde"] }
+zeroize = { version = "1.9.1", features = ["derive"] }
+
+[dev-dependencies]
+proptest = "1.12.0"
