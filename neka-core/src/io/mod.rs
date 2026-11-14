@@ -1,11 +1,11 @@
-//! Camada `io`: importação e exportação (CSV e KeePass KDBX 4).
+//! `io` layer: import and export (CSV and KeePass KDBX 4).
 //!
-//! Só converte bytes de/para [`Registro`]. Quem decide o que entra no cofre
-//! é a API. Nada daqui grava arquivo: a interface escolhe onde e avisa que
-//! uma exportação em CSV fica **em claro**.
+//! Only converts bytes from/to [`Record`]. The API decides what goes into the vault.
+//! Nothing here writes a file: the interface chooses where and warns that
+//! a CSV export is **plaintext**.
 
 mod csv;
-mod erro;
+mod error;
 mod kdbx;
 
 use std::collections::BTreeMap;
@@ -13,13 +13,13 @@ use std::fmt;
 
 use zeroize::Zeroize;
 
-pub use self::csv::{exportar_csv, importar_csv};
-pub use erro::ErroIo;
-pub use kdbx::{exportar_kdbx, importar_kdbx};
+pub use self::csv::{export_csv, import_csv};
+pub use error::IoError;
+pub use kdbx::{export_kdbx, import_kdbx};
 
-/// Uma conta a importar ou exportar, sem os metadados do cofre.
+/// An account to import or export, without the vault metadata.
 #[derive(Clone, Default, PartialEq, Eq)]
-pub struct Registro {
+pub struct Record {
     pub title: String,
     pub username: String,
     pub password: String,
@@ -29,13 +29,13 @@ pub struct Registro {
     pub extra: BTreeMap<String, String>,
 }
 
-impl fmt::Debug for Registro {
+impl fmt::Debug for Record {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("Registro { <oculto> }")
+        f.write_str("Record { <hidden> }")
     }
 }
 
-impl Drop for Registro {
+impl Drop for Record {
     fn drop(&mut self) {
         self.title.zeroize();
         self.username.zeroize();

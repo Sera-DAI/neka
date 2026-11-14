@@ -1,57 +1,57 @@
-//! KeePass KDBX 4 (crate `keepass`). Na importação, o caminho do grupo vira
-//! etiqueta e os campos personalizados viram campos extras; a lixeira é
-//! ignorada. A exportação gera KDBX 4 com Argon2id nos parâmetros da D8.
+//! KeePass KDBX 4 (crate `keepass`). On import, the group path becomes a
+//! tag and custom fields become extra fields; the recycle bin is
+//! ignored. Export generates KDBX 4 with Argon2id using D8's params.
 
 use keepass::config::{DatabaseConfig, KdfConfig};
 use keepass::db::{fields, Value};
 use keepass::{Database, DatabaseKey};
 
-use super::{ErroIo, Registro};
+use super::{IoError, Record};
 
-fn chave(senha: &str) -> DatabaseKey {
-    DatabaseKey::new().with_password(senha)
+fn key(password: &str) -> DatabaseKey {
+    DatabaseKey::new().with_password(password)
 }
 
-/// Lê um KDBX (3.1 ou 4) protegido por senha.
-pub fn importar_kdbx(bytes: &[u8], senha: &str) -> Result<Vec<Registro>, ErroIo> {
-    let db = Database::parse(bytes, chave(senha)).map_err(|e| {
+/// Reads a KDBX (3.1 or 4) protected by a password.
+pub fn import_kdbx(bytes: &[u8], password: &str) -> Result<Vec<Record>, IoError> {
+    let db = Database::parse(bytes, key(password)).map_err(|e| {
         use keepass::db::DatabaseOpenError as E;
         match e {
-            E::UnsupportedVersion => ErroIo::KdbxNaoSuportado,
-            _ => ErroIo::KdbxNaoAbriu,
+            E::UnsupportedVersion => IoError::KdbxUnsupported,
+            _ => IoError::KdbxOpenFailed,
         }
     })?;
-    let lixeira = db.recycle_bin().map(|g| g.id());
-    let mut saida = Vec::new();
+    let recycle_bin = db.recycle_bin().map(|g| g.id());
+    let mut output = Vec::new();
     for e in db.iter_all_entries() {
-        // grupo: caminho sem a raiz; pula o que estiver na lixeira
-        let mut nomes = Vec::new();
-        let mut na_lixeira = false;
+        // group: path without the root; skips what is in the recycle bin
+        let mut names = Vec::new();
+        let mut in_recycle_bin = false;
         let mut g = Some(e.parent().id());
         while let Some(id) = g {
-            let Some(atual) = db.group(id) else { break };
-            if Some(id) == lixeira {
-                na_lixeira = true;
+            let Some(current) = db.group(id) else { break };
+            if Some(id) == recycle_bin {
+                in_recycle_bin = true;
             }
-            g = atual.parent().map(|p| p.id());
+            g = current.parent().map(|p| p.id());
             if g.is_some() {
-                nomes.push(atual.name.clone());
+                names.push(current.name.clone());
             }
         }
-        if na_lixeira {
+        if in_recycle_bin {
             continue;
         }
-        nomes.reverse();
-        let mut r = Registro::default();
+        names.reverse();
+        let mut r = Record::default();
         r.title = e.get_title().unwrap_or_default().to_owned();
         r.username = e.get_username().unwrap_or_default().to_owned();
         r.password = e.get_password().unwrap_or_default().to_owned();
         r.url = e.get_url().unwrap_or_default().to_owned();
         r.notes = e.get(fields::NOTES).unwrap_or_default().to_owned();
         r.tags = e.tags.clone();
-        let grupo = nomes.join("/");
-        if !grupo.is_empty() {
-            r.tags.push(grupo);
+        let group = names.join("/");
+        if !group.is_empty() {
+            r.tags.push(group);
         }
         r.tags.retain(|t| !t.trim().is_empty());
         r.tags.sort();
@@ -71,13 +71,13 @@ pub fn importar_kdbx(bytes: &[u8], senha: &str) -> Result<Vec<Registro>, ErroIo>
         if r.title.trim().is_empty() && r.password.is_empty() {
             continue;
         }
-        saida.push(r);
+        output.push(r);
     }
-    Ok(saida)
+    Ok(output)
 }
 
-/// Gera um KDBX 4 protegido por `senha`.
-pub fn exportar_kdbx(registros: &[Registro], senha: &str) -> Result<Vec<u8>, ErroIo> {
+/// Generates a KDBX 4 protected by `password`.
+pub fn export_kdbx(records: &[Record], password: &str) -> Result<Vec<u8>, IoError> {
     let mut config = DatabaseConfig::default();
     if let KdfConfig::Argon2 { version, .. } = config.kdf_config {
         config.kdf_config = KdfConfig::Argon2id {
@@ -90,10 +90,10 @@ pub fn exportar_kdbx(registros: &[Registro], senha: &str) -> Result<Vec<u8>, Err
     let mut db = Database::with_config(config);
     db.meta.database_name = Some("neka".into());
     {
-        let mut raiz = db.root_mut();
-        raiz.name = "neka".into();
-        for r in registros {
-            let mut e = raiz.add_entry();
+        let mut root = db.root_mut();
+        root.name = "neka".into();
+        for r in records {
+            let mut e = root.add_entry();
             e.set_unprotected(fields::TITLE, r.title.as_str());
             e.set_unprotected(fields::USERNAME, r.username.as_str());
             e.set(fields::PASSWORD, Value::protected(r.password.as_str()));
@@ -105,8 +105,8 @@ pub fn exportar_kdbx(registros: &[Registro], senha: &str) -> Result<Vec<u8>, Err
             e.tags = r.tags.clone();
         }
     }
-    let mut saida = Vec::new();
-    db.save(&mut saida, chave(senha))
-        .map_err(|_| ErroIo::KdbxNaoGravou)?;
-    Ok(saida)
+    let mut output = Vec::new();
+    db.save(&mut output, key(password))
+        .map_err(|_| IoError::KdbxWriteFailed)?;
+    Ok(output)
 }

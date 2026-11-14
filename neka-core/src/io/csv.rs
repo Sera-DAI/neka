@@ -1,28 +1,28 @@
-//! CSV. A exportação usa as colunas do próprio neka. A importação reconhece
-//! o cabeçalho do neka, do Bitwarden, do Chrome/Edge, do Firefox, do
-//! KeePass/KeePassXC e do 1Password, pelo nome das colunas.
+//! CSV. Export uses neka's own columns. Import recognizes
+//! the header of neka, Bitwarden, Chrome/Edge, Firefox,
+//! KeePass/KeePassXC and 1Password, by column name (Portuguese column names are accepted too).
 
 use std::collections::BTreeMap;
 
-use super::{ErroIo, Registro};
+use super::{IoError, Record};
 
-const COLUNAS: [&str; 6] = ["title", "username", "password", "url", "notes", "tags"];
+const COLUMNS: [&str; 6] = ["title", "username", "password", "url", "notes", "tags"];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Campo {
-    Titulo,
-    Usuario,
-    Senha,
+enum Field {
+    Title,
+    Username,
+    Password,
     Url,
-    Notas,
-    Etiquetas,
-    Grupo,
+    Notes,
+    Tags,
+    Group,
     Totp,
 }
 
-/// Nome de coluna normalizado → campo.
-fn campo(nome: &str) -> Option<Campo> {
-    let n: String = nome
+/// Normalized column name → field.
+fn field(name: &str) -> Option<Field> {
+    let n: String = name
         .trim()
         .trim_start_matches('\u{feff}')
         .to_lowercase()
@@ -30,27 +30,27 @@ fn campo(nome: &str) -> Option<Campo> {
         .filter(|c| c.is_alphanumeric())
         .collect();
     Some(match n.as_str() {
-        "title" | "name" | "titulo" | "nome" | "account" => Campo::Titulo,
-        "username" | "loginusername" | "user" | "login" | "usuario" | "email" => Campo::Usuario,
-        "password" | "loginpassword" | "senha" => Campo::Senha,
-        "url" | "loginuri" | "website" | "uri" | "endereco" | "site" => Campo::Url,
-        "notes" | "note" | "notas" | "comments" => Campo::Notas,
-        "tags" | "etiquetas" => Campo::Etiquetas,
-        "folder" | "group" | "grupo" | "pasta" => Campo::Grupo,
-        "totp" | "logintotp" | "otpauth" | "otp" => Campo::Totp,
+        "title" | "name" | "titulo" | "nome" | "account" => Field::Title,
+        "username" | "loginusername" | "user" | "login" | "usuario" | "email" => Field::Username,
+        "password" | "loginpassword" | "senha" => Field::Password,
+        "url" | "loginuri" | "website" | "uri" | "endereco" | "site" => Field::Url,
+        "notes" | "note" | "notas" | "comments" => Field::Notes,
+        "tags" | "etiquetas" => Field::Tags,
+        "folder" | "group" | "grupo" | "pasta" => Field::Group,
+        "totp" | "logintotp" | "otpauth" | "otp" => Field::Totp,
         _ => return None,
     })
 }
 
-/// Lê um CSV com cabeçalho. Linhas sem título ganham o endereço ou o
-/// usuário como título; linhas totalmente vazias são puladas.
-pub fn importar_csv(bytes: &[u8]) -> Result<Vec<Registro>, ErroIo> {
-    let mut leitor = ::csv::ReaderBuilder::new()
+/// Reads a CSV with a header. Rows without a title get the address or the
+/// username as the title; fully empty rows are skipped.
+pub fn import_csv(bytes: &[u8]) -> Result<Vec<Record>, IoError> {
+    let mut reader = ::csv::ReaderBuilder::new()
         .flexible(true)
         .from_reader(bytes);
-    let cab = leitor.headers().map_err(|_| ErroIo::CsvInvalido)?.clone();
-    let mapa: Vec<Option<Campo>> = cab.iter().map(campo).collect();
-    let extras: Vec<Option<String>> = cab
+    let header = reader.headers().map_err(|_| IoError::InvalidCsv)?.clone();
+    let mapping: Vec<Option<Field>> = header.iter().map(field).collect();
+    let extras: Vec<Option<String>> = header
         .iter()
         .map(|n| {
             n.strip_prefix("extra:")
@@ -58,41 +58,43 @@ pub fn importar_csv(bytes: &[u8]) -> Result<Vec<Registro>, ErroIo> {
                 .map(str::to_owned)
         })
         .collect();
-    let tem = |c| mapa.contains(&Some(c));
-    if !(tem(Campo::Titulo) || tem(Campo::Url)) || !(tem(Campo::Senha) || tem(Campo::Usuario)) {
-        return Err(ErroIo::CsvSemColunas);
+    let has = |c| mapping.contains(&Some(c));
+    if !(has(Field::Title) || has(Field::Url)) || !(has(Field::Password) || has(Field::Username)) {
+        return Err(IoError::CsvNoColumns);
     }
-    let mut saida = Vec::new();
-    for linha in leitor.records() {
-        let linha = linha.map_err(|_| ErroIo::CsvInvalido)?;
-        let mut r = Registro::default();
-        for (i, valor) in linha.iter().enumerate() {
-            if let (Some(Some(nome)), false) = (extras.get(i), valor.is_empty()) {
-                r.extra.insert(nome.clone(), valor.to_owned());
+    let mut output = Vec::new();
+    for line in reader.records() {
+        let line = line.map_err(|_| IoError::InvalidCsv)?;
+        let mut r = Record::default();
+        for (i, value) in line.iter().enumerate() {
+            if let (Some(Some(name)), false) = (extras.get(i), value.is_empty()) {
+                r.extra.insert(name.clone(), value.to_owned());
                 continue;
             }
-            let Some(Some(c)) = mapa.get(i) else { continue };
-            if valor.is_empty() {
+            let Some(Some(c)) = mapping.get(i) else {
+                continue;
+            };
+            if value.is_empty() {
                 continue;
             }
             match c {
-                Campo::Titulo if r.title.is_empty() => r.title = valor.to_owned(),
-                Campo::Usuario if r.username.is_empty() => r.username = valor.to_owned(),
-                Campo::Senha if r.password.is_empty() => r.password = valor.to_owned(),
-                Campo::Url if r.url.is_empty() => r.url = valor.to_owned(),
-                Campo::Notas if r.notes.is_empty() => r.notes = valor.to_owned(),
-                Campo::Etiquetas => r.tags.extend(
-                    valor
+                Field::Title if r.title.is_empty() => r.title = value.to_owned(),
+                Field::Username if r.username.is_empty() => r.username = value.to_owned(),
+                Field::Password if r.password.is_empty() => r.password = value.to_owned(),
+                Field::Url if r.url.is_empty() => r.url = value.to_owned(),
+                Field::Notes if r.notes.is_empty() => r.notes = value.to_owned(),
+                Field::Tags => r.tags.extend(
+                    value
                         .split([';', ','])
                         .map(str::trim)
                         .filter(|t| !t.is_empty())
                         .map(str::to_owned),
                 ),
-                Campo::Grupo => {
-                    r.tags.push(valor.trim().to_owned());
+                Field::Group => {
+                    r.tags.push(value.trim().to_owned());
                 }
-                Campo::Totp => {
-                    r.extra.insert("totp".into(), valor.to_owned());
+                Field::Totp => {
+                    r.extra.insert("totp".into(), value.to_owned());
                 }
                 _ => {}
             }
@@ -109,16 +111,16 @@ pub fn importar_csv(bytes: &[u8]) -> Result<Vec<Registro>, ErroIo> {
         }
         r.tags.sort();
         r.tags.dedup();
-        saida.push(r);
+        output.push(r);
     }
-    Ok(saida)
+    Ok(output)
 }
 
-/// Gera CSV **em claro** com as colunas do neka (etiquetas separadas por
-/// `;`). Campos extras viram colunas `extra:<nome>`.
-pub fn exportar_csv(registros: &[Registro]) -> Result<Vec<u8>, ErroIo> {
+/// Generates **plaintext** CSV with neka's columns (tags separated by
+/// `;`). Extra fields become `extra:<name>` columns.
+pub fn export_csv(records: &[Record]) -> Result<Vec<u8>, IoError> {
     let extras: Vec<String> = {
-        let mut v: Vec<String> = registros
+        let mut v: Vec<String> = records
             .iter()
             .flat_map(|r| r.extra.keys().cloned())
             .collect();
@@ -127,19 +129,18 @@ pub fn exportar_csv(registros: &[Registro]) -> Result<Vec<u8>, ErroIo> {
         v
     };
     let mut w = ::csv::Writer::from_writer(Vec::new());
-    let mut cab: Vec<String> = COLUNAS.iter().map(|s| (*s).to_owned()).collect();
-    cab.extend(extras.iter().map(|e| format!("extra:{e}")));
-    w.write_record(&cab).map_err(|_| ErroIo::CsvInvalido)?;
-    let vazio = BTreeMap::new();
-    for r in registros {
+    let mut header: Vec<String> = COLUMNS.iter().map(|s| (*s).to_owned()).collect();
+    header.extend(extras.iter().map(|e| format!("extra:{e}")));
+    w.write_record(&header).map_err(|_| IoError::InvalidCsv)?;
+    let empty = BTreeMap::new();
+    for r in records {
         let tags = r.tags.join(";");
-        let mut linha: Vec<&str> =
-            vec![&r.title, &r.username, &r.password, &r.url, &r.notes, &tags];
-        let ex = if r.extra.is_empty() { &vazio } else { &r.extra };
+        let mut line: Vec<&str> = vec![&r.title, &r.username, &r.password, &r.url, &r.notes, &tags];
+        let ex = if r.extra.is_empty() { &empty } else { &r.extra };
         for e in &extras {
-            linha.push(ex.get(e).map(String::as_str).unwrap_or(""));
+            line.push(ex.get(e).map(String::as_str).unwrap_or(""));
         }
-        w.write_record(&linha).map_err(|_| ErroIo::CsvInvalido)?;
+        w.write_record(&line).map_err(|_| IoError::InvalidCsv)?;
     }
-    w.into_inner().map_err(|_| ErroIo::CsvInvalido)
+    w.into_inner().map_err(|_| IoError::InvalidCsv)
 }

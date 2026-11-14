@@ -12,7 +12,7 @@ license = "MIT"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
-# O Argon2id sem otimização deixa os testes lentos demais.
+# Unoptimized Argon2id makes the tests too slow.
 [profile.dev.package.argon2]
 opt-level = 3
 

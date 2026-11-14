@@ -2,58 +2,59 @@ use chacha20poly1305::aead::Aead;
 use chacha20poly1305::aead::Payload;
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 
-use super::{aleatorio, Chave, ErroCripto};
+use super::{random, CryptoError, Key};
 
-pub const TAM_NONCE: usize = 24;
-pub const TAM_ETIQUETA: usize = 16;
+pub const NONCE_LEN: usize = 24;
+pub const TAG_LEN: usize = 16;
 
-/// Nonce de 192 bits (D9).
+/// 192-bit nonce (D9).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Nonce(pub [u8; TAM_NONCE]);
+pub struct Nonce(pub [u8; NONCE_LEN]);
 
 impl Nonce {
-    /// Nonce aleatório novo. Deve ser gerado a cada cifragem.
-    pub fn aleatorio() -> Result<Self, ErroCripto> {
-        let mut n = [0; TAM_NONCE];
-        aleatorio(&mut n)?;
+    /// New random nonce. Must be generated for every encryption.
+    pub fn random() -> Result<Self, CryptoError> {
+        let mut n = [0; NONCE_LEN];
+        random(&mut n)?;
         Ok(Self(n))
     }
 }
 
-fn cifra(chave: &Chave) -> XChaCha20Poly1305 {
-    XChaCha20Poly1305::new_from_slice(chave.como_bytes()).expect("chave tem 32 bytes")
+fn cipher(key: &Key) -> XChaCha20Poly1305 {
+    XChaCha20Poly1305::new_from_slice(key.como_bytes()).expect("key has 32 bytes")
 }
 
-/// XChaCha20-Poly1305: devolve texto cifrado seguido da etiqueta de 16 bytes.
-pub fn selar(
-    chave: &Chave,
-    nonce: &Nonce,
-    aad: &[u8],
-    claro: &[u8],
-) -> Result<Vec<u8>, ErroCripto> {
-    cifra(chave)
-        .encrypt(&XNonce::from(nonce.0), Payload { msg: claro, aad })
-        .map_err(|_| ErroCripto::TamanhoInvalido)
+/// XChaCha20-Poly1305: returns ciphertext followed by the 16-byte tag.
+pub fn seal(key: &Key, nonce: &Nonce, aad: &[u8], plain: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    cipher(key)
+        .encrypt(&XNonce::from(nonce.0), Payload { msg: plain, aad })
+        .map_err(|_| CryptoError::InvalidSize)
 }
 
-/// Inverso de [`selar`]. Qualquer alteração em chave, nonce, AAD ou texto
-/// cifrado resulta em [`ErroCripto::FalhaAutenticacao`].
-pub fn abrir(
-    chave: &Chave,
+/// Inverse of [`seal`]. Any change to key, nonce, AAD or text
+/// ciphertext results in [`CryptoError::AuthenticationFailed`].
+pub fn open(
+    key: &Key,
     nonce: &Nonce,
     aad: &[u8],
-    cifrado: &[u8],
-) -> Result<Vec<u8>, ErroCripto> {
-    if cifrado.len() < TAM_ETIQUETA {
-        return Err(ErroCripto::FalhaAutenticacao);
+    encrypted: &[u8],
+) -> Result<Vec<u8>, CryptoError> {
+    if encrypted.len() < TAG_LEN {
+        return Err(CryptoError::AuthenticationFailed);
     }
-    cifra(chave)
-        .decrypt(&XNonce::from(nonce.0), Payload { msg: cifrado, aad })
-        .map_err(|_| ErroCripto::FalhaAutenticacao)
+    cipher(key)
+        .decrypt(
+            &XNonce::from(nonce.0),
+            Payload {
+                msg: encrypted,
+                aad,
+            },
+        )
+        .map_err(|_| CryptoError::AuthenticationFailed)
 }
 
 #[cfg(test)]
-mod testes {
+mod tests {
     use super::*;
 
     fn hex(s: &str) -> Vec<u8> {
@@ -63,10 +64,10 @@ mod testes {
             .collect()
     }
 
-    /// draft-irtf-cfrg-xchacha-03, apêndice A.3.1.
+    /// draft-irtf-cfrg-xchacha-03, appendix A.3.1.
     #[test]
-    fn vetor_conhecido_xchacha20poly1305() {
-        let chave = Chave::de_bytes(
+    fn known_vector_xchacha20poly1305() {
+        let key = Key::de_bytes(
             hex("808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f")
                 .try_into()
                 .unwrap(),
@@ -77,16 +78,16 @@ mod testes {
                 .unwrap(),
         );
         let aad = hex("50515253c0c1c2c3c4c5c6c7");
-        let claro = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
-        let esperado = hex(concat!(
+        let plain = b"Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.";
+        let expected = hex(concat!(
             "bd6d179d3e83d43b9576579493c0e939572a1700252bfaccbed2902c21396cbb",
             "731c7f1b0b4aa6440bf3a82f4eda7e39ae64c6708c54c216cb96b72e1213b452",
             "2f8c9ba40db5d945b11b69b982c1bb9e3f3fac2bc369488f76b2383565d3fff9",
             "21f9664c97637da9768812f615c68b13b52e",
             "c0875924c1c7987947deafd8780acf49"
         ));
-        let cifrado = selar(&chave, &nonce, &aad, claro).unwrap();
-        assert_eq!(cifrado, esperado);
-        assert_eq!(abrir(&chave, &nonce, &aad, &cifrado).unwrap(), claro);
+        let encrypted = seal(&key, &nonce, &aad, plain).unwrap();
+        assert_eq!(encrypted, expected);
+        assert_eq!(open(&key, &nonce, &aad, &encrypted).unwrap(), plain);
     }
 }

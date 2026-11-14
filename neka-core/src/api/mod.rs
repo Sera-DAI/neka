@@ -1,38 +1,38 @@
-//! Camada de aplicação: a única porta de entrada para as interfaces
-//! (`neka-cli`, e `neka-android` no futuro). Operações de alto nível sobre
-//! um cofre, com erros como códigos tipados e texto estático.
+//! Application layer: the only entry point for the interfaces
+//! (`neka-cli`, and `neka-android` in the future). High-level operations on
+//! a vault, with errors as typed codes and static text.
 //!
-//! Tempo (`agora`, ms desde 1970 UTC) e o identificador do dispositivo entram
-//! por parâmetro: o relógio e o armazenamento do dispositivo são da interface.
+//! Time (`now`, ms since 1970 UTC) and the device identifier come in
+//! as parameters: the clock and the device storage belong to the interface.
 
-mod cofre;
-mod erro;
-mod importar;
-mod recuperacao;
-mod sincronizar;
+mod error;
+mod import;
+mod recovery;
+mod sync;
+mod vault;
 
 pub use crate::io::{
-    exportar_csv as gerar_csv, exportar_kdbx as gerar_kdbx, importar_csv as ler_csv,
-    importar_kdbx as ler_kdbx, ErroIo, Registro,
+    export_csv as generate_csv, export_kdbx as generate_kdbx, import_csv as read_csv,
+    import_kdbx as read_kdbx, IoError, Record,
 };
-pub use cofre::{Cofre, Credencial, NovaEntrada};
-pub use erro::ErroApi;
-pub use importar::RelatorioImportacao;
-pub use recuperacao::{
-    de_texto as chave_de_recuperacao_de_texto, para_texto as chave_de_recuperacao_para_texto,
+pub use error::ApiError;
+pub use import::ImportReport;
+pub use recovery::{from_text as recovery_key_from_text, to_text as recovery_key_to_text};
+pub use sync::{SyncReport, BACKUPS_KEPT};
+pub use vault::{Credential, NewEntry, Vault};
+
+// Types the interfaces need to see without touching the lower layers.
+pub use crate::crypto::{
+    generate_password, Classes, KdfParams, Key, PASSWORD_LEN_MAX, PASSWORD_LEN_MIN,
 };
-pub use sincronizar::{RelatorioSync, BACKUPS_MANTIDOS};
+pub use crate::model::{Entry, Uuid};
 
-// Tipos que as interfaces precisam ver sem tocar nas camadas de baixo.
-pub use crate::crypto::{gerar_senha, Chave, Classes, ParametrosKdf};
-pub use crate::model::{Entrada, Uuid};
+/// Core version, for the interface to show in `--version`.
+pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Versão do núcleo, para a interface mostrar em `--version`.
-pub const VERSAO: &str = env!("CARGO_PKG_VERSION");
-
-/// Identificador aleatório para um dispositivo novo (a interface guarda).
-pub fn novo_id_dispositivo() -> Result<Uuid, ErroApi> {
+/// Random identifier for a new device (the interface stores it).
+pub fn new_device_id() -> Result<Uuid, ApiError> {
     let mut b = [0u8; 16];
-    crate::crypto::aleatorio(&mut b)?;
+    crate::crypto::random(&mut b)?;
     Ok(uuid::Builder::from_random_bytes(b).into_uuid())
 }

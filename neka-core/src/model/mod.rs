@@ -1,13 +1,13 @@
-//! Domínio: tipos do cofre, validações e serialização CBOR. Sem I/O.
+//! Domain: vault types, validation and CBOR serialization. No I/O.
 //!
-//! Tempo (`now`), identificadores e relógio lógico entram sempre por
-//! parâmetro: esta camada não lê relógio nem sorteia nada.
+//! Time (`now`), identifiers and the logical clock always come in as
+//! parameters: this layer neither reads a clock nor draws anything random.
 
-mod corpo;
-mod entrada;
-mod erro;
+mod body;
+mod entry;
+mod error;
 
-pub use corpo::{Corpo, SCHEMA_ATUAL};
-pub use entrada::{Entrada, Lapide, SenhaAntiga, MAX_HISTORICO};
-pub use erro::ErroModelo;
+pub use body::{Body, CURRENT_SCHEMA};
+pub use entry::{Entry, OldPassword, Tombstone, MAX_HISTORY};
+pub use error::ModelError;
 pub use uuid::Uuid;

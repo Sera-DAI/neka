@@ -1,9 +1,9 @@
-//! Camada `sync`: mesclagem de duas versões do corpo (D11, a especificação do formato).
+//! `sync` layer: merge of two versions of the body (D11, the format specification).
 //!
-//! Função pura, sem I/O: recebe dois corpos já abertos do mesmo cofre e
-//! devolve o corpo mesclado. É comutativa, associativa e idempotente
-//! (verificado por testes de propriedade em `tests/mesclagem.rs`).
+//! Pure function, no I/O: takes two already-open bodies of the same vault and
+//! returns the merged body. It is commutative, associative and idempotent
+//! (verified by property tests in `tests/merging.rs`).
 
-mod mesclar;
+mod merge;
 
-pub use mesclar::{mesclar, podar_lapides, RETENCAO_LAPIDES_MS};
+pub use merge::{merge, prune_tombstones, TOMBSTONE_RETENTION_MS};

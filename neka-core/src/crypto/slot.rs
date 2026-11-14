@@ -1,77 +1,72 @@
 use uuid::Uuid;
 
-use super::{abrir, selar, Chave, ErroCripto, Nonce, TAM_CHAVE, TAM_ETIQUETA};
+use super::{open, seal, CryptoError, Key, Nonce, KEY_LEN, TAG_LEN};
 
-/// Chave de dados cifrada (32) mais etiqueta (16).
-pub const TAM_EMBRULHADA: usize = TAM_CHAVE + TAM_ETIQUETA;
+/// Encrypted data key (32) plus tag (16).
+pub const WRAPPED_LEN: usize = KEY_LEN + TAG_LEN;
 
-const PREFIXO_AAD: &[u8] = b"neka-v1-keyslot";
+const AAD_PREFIX: &[u8] = b"neka-v1-keyslot";
 
-/// Tipo de compartimento de chave (a especificação do formato).
+/// Key slot kind (the format specification).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
-pub enum TipoSlot {
-    Senha = 1,
-    Recuperacao = 2,
+pub enum SlotKind {
+    Password = 1,
+    Recovery = 2,
 }
 
-impl TipoSlot {
+impl SlotKind {
     pub fn de_byte(b: u8) -> Option<Self> {
         match b {
-            1 => Some(Self::Senha),
-            2 => Some(Self::Recuperacao),
+            1 => Some(Self::Password),
+            2 => Some(Self::Recovery),
             _ => None,
         }
     }
 }
 
-/// Resultado do embrulho: o que vai gravado no compartimento.
+/// Result of wrapping: what is written into the slot.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChaveEmbrulhada {
+pub struct WrappedKey {
     pub nonce: Nonce,
-    pub cifrada: [u8; TAM_EMBRULHADA],
+    pub encrypted: [u8; WRAPPED_LEN],
 }
 
-fn aad(vault_id: &Uuid, epoca: u32, tipo: TipoSlot) -> Vec<u8> {
-    let mut a = Vec::with_capacity(PREFIXO_AAD.len() + 21);
-    a.extend_from_slice(PREFIXO_AAD);
+fn aad(vault_id: &Uuid, epoch: u32, kind: SlotKind) -> Vec<u8> {
+    let mut a = Vec::with_capacity(AAD_PREFIX.len() + 21);
+    a.extend_from_slice(AAD_PREFIX);
     a.extend_from_slice(vault_id.as_bytes());
-    a.extend_from_slice(&epoca.to_le_bytes());
-    a.push(tipo as u8);
+    a.extend_from_slice(&epoch.to_le_bytes());
+    a.push(kind as u8);
     a
 }
 
-/// Embrulha a chave de dados com a chave de embrulho, com nonce novo.
+/// Wraps the data key with the wrapping key, with a new nonce.
 /// AAD: `"neka-v1-keyslot" || vault_id || key_epoch || slot_type` (D15).
-pub fn embrulhar(
-    embrulho: &Chave,
-    dados: &Chave,
+pub fn wrap(
+    wrap: &Key,
+    data: &Key,
     vault_id: &Uuid,
-    epoca: u32,
-    tipo: TipoSlot,
-) -> Result<ChaveEmbrulhada, ErroCripto> {
-    let nonce = Nonce::aleatorio()?;
-    let c = selar(
-        embrulho,
-        &nonce,
-        &aad(vault_id, epoca, tipo),
-        dados.como_bytes(),
-    )?;
-    let cifrada = c.try_into().map_err(|_| ErroCripto::TamanhoInvalido)?;
-    Ok(ChaveEmbrulhada { nonce, cifrada })
+    epoch: u32,
+    kind: SlotKind,
+) -> Result<WrappedKey, CryptoError> {
+    let nonce = Nonce::random()?;
+    let c = seal(wrap, &nonce, &aad(vault_id, epoch, kind), data.como_bytes())?;
+    let encrypted = c.try_into().map_err(|_| CryptoError::InvalidSize)?;
+    Ok(WrappedKey { nonce, encrypted })
 }
 
-/// Recupera a chave de dados. Chave errada, cofre, época ou tipo trocados, ou
-/// qualquer byte alterado: [`ErroCripto::FalhaAutenticacao`].
-pub fn desembrulhar(
-    embrulho: &Chave,
-    e: &ChaveEmbrulhada,
+/// Recovers the data key. Wrong key, swapped vault, epoch or kind, or
+/// any changed byte: [`CryptoError::AuthenticationFailed`].
+pub fn unwrap(
+    wrap: &Key,
+    e: &WrappedKey,
     vault_id: &Uuid,
-    epoca: u32,
-    tipo: TipoSlot,
-) -> Result<Chave, ErroCripto> {
-    let mut claro = abrir(embrulho, &e.nonce, &aad(vault_id, epoca, tipo), &e.cifrada)?;
-    let r = <[u8; TAM_CHAVE]>::try_from(claro.as_slice()).map_err(|_| ErroCripto::TamanhoInvalido);
-    zeroize::Zeroize::zeroize(&mut claro);
-    r.map(Chave::de_bytes)
+    epoch: u32,
+    kind: SlotKind,
+) -> Result<Key, CryptoError> {
+    let mut plain = open(wrap, &e.nonce, &aad(vault_id, epoch, kind), &e.encrypted)?;
+    let r = <[u8; KEY_LEN]>::try_from(plain.as_slice()).map_err(|_| CryptoError::InvalidSize);
+    zeroize::Zeroize::zeroize(&mut plain);
+    r.map(Key::de_bytes)
 }

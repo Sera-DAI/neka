@@ -1,11 +1,11 @@
-//! Visual do terminal, no estilo do Kotsu (tema "Algodão-Doce").
+//! Terminal look, in the Kotsu style ("Cotton Candy" theme).
 //!
-//! Cores e enfeites (corações, nuvens, rostinhos) só aparecem quando o fluxo
-//! é um terminal e `NO_COLOR` não está definido. Em pipe, redirecionamento ou
-//! teste a saída é texto puro, sem glifos, para continuar fácil de filtrar
-//! com `grep` e scripts. A paleta é a do Kotsu (noite por padrão; claro com
-//! `NEKA_THEME=light`). Nenhum segredo passa por aqui além do que já seria
-//! impresso: o estilo só envolve o texto, nunca o altera.
+//! Colors and decorations (hearts, clouds, little faces) only appear when the stream
+//! is a terminal and `NO_COLOR` is not set. In a pipe, redirection or
+//! test the output is plain text, with no glyphs, so it stays easy to filter
+//! with `grep` and scripts. The palette is Kotsu's (night by default; light with
+//! `NEKA_THEME=light`). No secret goes through here beyond what would already be
+//! printed: the style only wraps the text, never changes it.
 
 use std::fmt::Display;
 use std::io::Write;
@@ -15,264 +15,267 @@ use anstream::ColorChoice;
 use clap::builder::styling::{Effects, RgbColor, Style, Styles};
 
 #[derive(Clone, Copy)]
-struct Paleta {
-    destaque: RgbColor,
-    secundaria: RgbColor,
-    aviso: RgbColor,
+struct Palette {
+    highlight: RgbColor,
+    secondary: RgbColor,
+    warning: RgbColor,
     ok: RgbColor,
-    erro: RgbColor,
-    neutro: RgbColor,
-    texto: RgbColor,
-    fundo: RgbColor,
-    painel: RgbColor,
+    error: RgbColor,
+    neutral: RgbColor,
+    text: RgbColor,
+    background: RgbColor,
+    panel: RgbColor,
 }
 
-/// Algodão-Doce noite (padrão).
-const NOITE: Paleta = Paleta {
-    destaque: RgbColor(0xff, 0x7f, 0xb8),
-    secundaria: RgbColor(0x8f, 0xb3, 0xff),
-    aviso: RgbColor(0xff, 0xd2, 0x7a),
+/// Cotton Candy night (default).
+const NIGHT: Palette = Palette {
+    highlight: RgbColor(0xff, 0x7f, 0xb8),
+    secondary: RgbColor(0x8f, 0xb3, 0xff),
+    warning: RgbColor(0xff, 0xd2, 0x7a),
     ok: RgbColor(0x86, 0xef, 0xc0),
-    erro: RgbColor(0xff, 0x7a, 0x9e),
-    neutro: RgbColor(0x9a, 0x7f, 0xa8),
-    texto: RgbColor(0xff, 0xe9, 0xf4),
-    fundo: RgbColor(0x1d, 0x14, 0x24),
-    painel: RgbColor(0x41, 0x27, 0x4f),
+    error: RgbColor(0xff, 0x7a, 0x9e),
+    neutral: RgbColor(0x9a, 0x7f, 0xa8),
+    text: RgbColor(0xff, 0xe9, 0xf4),
+    background: RgbColor(0x1d, 0x14, 0x24),
+    panel: RgbColor(0x41, 0x27, 0x4f),
 };
 
-/// Algodão-Doce claro, para terminais de fundo branco.
-const CLARO: Paleta = Paleta {
-    destaque: RgbColor(0xe0, 0x50, 0x9a),
-    secundaria: RgbColor(0x4f, 0x74, 0xc7),
-    aviso: RgbColor(0xb8, 0x74, 0x00),
+/// Cotton Candy light, for white-background terminals.
+const LIGHT: Palette = Palette {
+    highlight: RgbColor(0xe0, 0x50, 0x9a),
+    secondary: RgbColor(0x4f, 0x74, 0xc7),
+    warning: RgbColor(0xb8, 0x74, 0x00),
     ok: RgbColor(0x1f, 0x9d, 0x6b),
-    erro: RgbColor(0xd6, 0x33, 0x6c),
-    neutro: RgbColor(0x8f, 0x6f, 0x8c),
-    texto: RgbColor(0x5a, 0x3a, 0x5e),
-    fundo: RgbColor(0xff, 0xf5, 0xfa),
-    painel: RgbColor(0xff, 0xd6, 0xe8),
+    error: RgbColor(0xd6, 0x33, 0x6c),
+    neutral: RgbColor(0x8f, 0x6f, 0x8c),
+    text: RgbColor(0x5a, 0x3a, 0x5e),
+    background: RgbColor(0xff, 0xf5, 0xfa),
+    panel: RgbColor(0xff, 0xd6, 0xe8),
 };
 
-const MARCADOR: &str = "♡";
-const NUVEM: &str = "☁";
-const FAISCA: &str = "✧";
-const ESTRELA: &str = "☆";
-const FELIZ: &str = "(◕‿◕)♡";
-const TRISTE: &str = "(；ω；)";
-const ZERADO: &str = "zzz…";
+const MARKER: &str = "♡";
+const CLOUD: &str = "☁";
+const SPARK: &str = "✧";
+const STAR: &str = "☆";
+const HAPPY: &str = "(◕‿◕)♡";
+const SAD: &str = "(；ω；)";
+const ZEROED: &str = "zzz…";
 
-/// Qual saída está sendo escrita.
+/// Which output is being written.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Fluxo {
-    Saida,
-    Erro,
+pub enum Flow {
+    Output,
+    Error,
 }
 
-/// Papel da cor na paleta.
+/// Role of the color in the palette.
 #[derive(Clone, Copy)]
-pub enum Tom {
-    Destaque,
-    Secundaria,
-    Aviso,
+pub enum Tone {
+    Highlight,
+    Secondary,
+    Warning,
     Ok,
-    Erro,
-    Neutro,
-    Texto,
+    Error,
+    Neutral,
+    Text,
 }
 
-fn paleta() -> &'static Paleta {
-    static P: OnceLock<Paleta> = OnceLock::new();
+fn palette() -> &'static Palette {
+    static P: OnceLock<Palette> = OnceLock::new();
     P.get_or_init(|| match std::env::var("NEKA_THEME") {
-        Ok(v) if matches!(v.to_lowercase().as_str(), "light" | "claro") => CLARO,
-        _ => NOITE,
+        Ok(v) if matches!(v.to_lowercase().as_str(), "light") => LIGHT,
+        _ => NIGHT,
     })
 }
 
-/// Cores e enfeites só em terminal, respeitando `NO_COLOR` e `TERM=dumb`.
-pub fn enfeitado(f: Fluxo) -> bool {
-    static SAIDA: OnceLock<bool> = OnceLock::new();
-    static ERRO: OnceLock<bool> = OnceLock::new();
+/// Colors and decorations only on a terminal, respecting `NO_COLOR` and `TERM=dumb`.
+pub fn decorated(f: Flow) -> bool {
+    static OUTPUT: OnceLock<bool> = OnceLock::new();
+    static ERROR: OnceLock<bool> = OnceLock::new();
     match f {
-        Fluxo::Saida => *SAIDA
+        Flow::Output => *OUTPUT
             .get_or_init(|| anstream::AutoStream::choice(&std::io::stdout()) != ColorChoice::Never),
-        Fluxo::Erro => *ERRO
+        Flow::Error => *ERROR
             .get_or_init(|| anstream::AutoStream::choice(&std::io::stderr()) != ColorChoice::Never),
     }
 }
 
-fn cor(t: Tom) -> RgbColor {
-    let p = paleta();
+fn color(t: Tone) -> RgbColor {
+    let p = palette();
     match t {
-        Tom::Destaque => p.destaque,
-        Tom::Secundaria => p.secundaria,
-        Tom::Aviso => p.aviso,
-        Tom::Ok => p.ok,
-        Tom::Erro => p.erro,
-        Tom::Neutro => p.neutro,
-        Tom::Texto => p.texto,
+        Tone::Highlight => p.highlight,
+        Tone::Secondary => p.secondary,
+        Tone::Warning => p.warning,
+        Tone::Ok => p.ok,
+        Tone::Error => p.error,
+        Tone::Neutral => p.neutral,
+        Tone::Text => p.text,
     }
 }
 
-fn estilo(t: Tom, negrito: bool) -> Style {
-    let s = Style::new().fg_color(Some(cor(t).into()));
-    if negrito {
+fn style(t: Tone, bold: bool) -> Style {
+    let s = Style::new().fg_color(Some(color(t).into()));
+    if bold {
         s.effects(Effects::BOLD)
     } else {
         s
     }
 }
 
-/// Texto na cor pedida; sem enfeite, devolve o texto como veio.
-pub fn tom(f: Fluxo, t: Tom, negrito: bool, texto: impl Display) -> String {
-    if enfeitado(f) {
-        let e = estilo(t, negrito);
-        format!("{e}{texto}{e:#}")
+/// Text in the requested color; without decoration, returns the text as it came.
+pub fn tone(f: Flow, t: Tone, bold: bool, text: impl Display) -> String {
+    if decorated(f) {
+        let e = style(t, bold);
+        format!("{e}{text}{e:#}")
     } else {
-        texto.to_string()
+        text.to_string()
     }
 }
 
-/// Escreve uma linha (já estilizada) na saída pedida.
-pub fn linha(f: Fluxo, texto: impl Display) {
+/// Writes a (styled) line to the requested output.
+pub fn line(f: Flow, text: impl Display) {
     match f {
-        Fluxo::Saida => anstream::println!("{texto}"),
-        Fluxo::Erro => anstream::eprintln!("{texto}"),
+        Flow::Output => anstream::println!("{text}"),
+        Flow::Error => anstream::eprintln!("{text}"),
     }
 }
 
-/// Mensagem de sucesso: `♡ texto` (só o coração ganha cor).
-pub fn sucesso(f: Fluxo, texto: impl Display) {
-    if enfeitado(f) {
-        linha(f, format!("{} {texto}", tom(f, Tom::Ok, true, MARCADOR)));
+/// Success message: `♡ text` (only the heart gets color).
+pub fn success(f: Flow, text: impl Display) {
+    if decorated(f) {
+        line(f, format!("{} {text}", tone(f, Tone::Ok, true, MARKER)));
     } else {
-        linha(f, texto);
+        line(f, text);
     }
 }
 
-/// Dica ou observação discreta: `☆ texto` em tom neutro.
-pub fn dica(f: Fluxo, texto: impl Display) {
-    if enfeitado(f) {
-        linha(f, tom(f, Tom::Neutro, false, format!("{ESTRELA} {texto}")));
+/// Discreet hint or note: `☆ text` in a neutral tone.
+pub fn hint(f: Flow, text: impl Display) {
+    if decorated(f) {
+        line(f, tone(f, Tone::Neutral, false, format!("{STAR} {text}")));
     } else {
-        linha(f, texto);
+        line(f, text);
     }
 }
 
-/// Aviso: `✧ warning: texto` em dourado.
-pub fn aviso(texto: impl Display) {
-    let f = Fluxo::Erro;
-    if enfeitado(f) {
-        linha(
+/// Warning: `✧ warning: text` in gold.
+pub fn warning(text: impl Display) {
+    let f = Flow::Error;
+    if decorated(f) {
+        line(
             f,
-            tom(f, Tom::Aviso, false, format!("{FAISCA} warning: {texto}")),
+            tone(f, Tone::Warning, false, format!("{SPARK} warning: {text}")),
         );
     } else {
-        linha(f, format!("warning: {texto}"));
+        line(f, format!("warning: {text}"));
     }
 }
 
-/// Erro: `(；ω；) error: texto` em rosa-avermelhado.
-pub fn falha(texto: impl Display) {
-    let f = Fluxo::Erro;
-    if enfeitado(f) {
-        linha(
+/// Error: `(；ω；) error: text` in reddish pink.
+pub fn failure(text: impl Display) {
+    let f = Flow::Error;
+    if decorated(f) {
+        line(
             f,
-            tom(f, Tom::Erro, true, format!("{TRISTE} error: {texto}")),
+            tone(f, Tone::Error, true, format!("{SAD} error: {text}")),
         );
     } else {
-        linha(f, format!("error: {texto}"));
+        line(f, format!("error: {text}"));
     }
 }
 
-/// Título de seção: `☁ texto ☁` (só em terminal).
-pub fn titulo(f: Fluxo, texto: impl Display) {
-    if enfeitado(f) {
-        linha(
+/// Section title: `☁ text ☁` (terminal only).
+pub fn title(f: Flow, text: impl Display) {
+    if decorated(f) {
+        line(
             f,
-            tom(f, Tom::Destaque, true, format!("{NUVEM} {texto} {NUVEM}")),
+            tone(f, Tone::Highlight, true, format!("{CLOUD} {text} {CLOUD}")),
         );
     }
 }
 
-/// Linha "Rótulo:  valor", com o rótulo alinhado em 10 colunas.
-pub fn campo(rotulo: &str, valor: impl Display) {
-    campo_largo(rotulo, 10, valor);
+/// "Label:  value" line, with the label aligned to 10 columns.
+pub fn field(label: &str, value: impl Display) {
+    wide_field(label, 10, value);
 }
 
-/// Como `campo`, com a largura do rótulo à escolha.
-pub fn campo_largo(rotulo: &str, largura: usize, valor: impl Display) {
-    let r = format!("{rotulo:<largura$}");
-    linha(
-        Fluxo::Saida,
-        format!("{} {valor}", tom(Fluxo::Saida, Tom::Secundaria, true, r)),
+/// Like `field`, with the label width of your choice.
+pub fn wide_field(label: &str, width: usize, value: impl Display) {
+    let r = format!("{label:<width$}");
+    line(
+        Flow::Output,
+        format!("{} {value}", tone(Flow::Output, Tone::Secondary, true, r)),
     );
 }
 
-/// Trecho curto de texto de apoio (ids, endereços, datas).
-pub fn apagado(texto: impl Display) -> String {
-    tom(Fluxo::Saida, Tom::Neutro, false, texto)
+/// Short piece of supporting text (ids, addresses, dates).
+pub fn erased(text: impl Display) -> String {
+    tone(Flow::Output, Tone::Neutral, false, text)
 }
 
-/// Uma entrada na listagem: `♡ id  título  (usuário)  endereço  [etiquetas]`.
-pub fn linha_entrada(id: &str, titulo: &str, usuario: &str, url: &str, etiquetas: &[String]) {
-    let s = Fluxo::Saida;
-    if !enfeitado(s) {
-        let mut l = format!("{id}  {titulo}");
-        if !usuario.is_empty() {
-            l.push_str(&format!("  ({usuario})"));
+/// An entry in the listing: `♡ id  title  (username)  address  [tags]`.
+pub fn entry_line(id: &str, title: &str, username: &str, url: &str, tags: &[String]) {
+    let s = Flow::Output;
+    if !decorated(s) {
+        let mut l = format!("{id}  {title}");
+        if !username.is_empty() {
+            l.push_str(&format!("  ({username})"));
         }
         if !url.is_empty() {
             l.push_str(&format!("  {url}"));
         }
-        if !etiquetas.is_empty() {
-            l.push_str(&format!("  [{}]", etiquetas.join(", ")));
+        if !tags.is_empty() {
+            l.push_str(&format!("  [{}]", tags.join(", ")));
         }
-        linha(s, l);
+        line(s, l);
         return;
     }
     let mut l = format!(
         "{} {}  {}",
-        tom(s, Tom::Destaque, false, MARCADOR),
-        tom(s, Tom::Neutro, false, id),
-        tom(s, Tom::Texto, true, titulo)
+        tone(s, Tone::Highlight, false, MARKER),
+        tone(s, Tone::Neutral, false, id),
+        tone(s, Tone::Text, true, title)
     );
-    if !usuario.is_empty() {
+    if !username.is_empty() {
         l.push_str(&format!(
             "  {}",
-            tom(s, Tom::Secundaria, false, format!("({usuario})"))
+            tone(s, Tone::Secondary, false, format!("({username})"))
         ));
     }
     if !url.is_empty() {
-        l.push_str(&format!("  {}", tom(s, Tom::Neutro, false, url)));
+        l.push_str(&format!("  {}", tone(s, Tone::Neutral, false, url)));
     }
-    if !etiquetas.is_empty() {
+    if !tags.is_empty() {
         l.push_str(&format!(
             "  {}",
-            tom(s, Tom::Aviso, false, format!("[{}]", etiquetas.join(", ")))
+            tone(s, Tone::Warning, false, format!("[{}]", tags.join(", ")))
         ));
     }
-    linha(s, l);
+    line(s, l);
 }
 
-/// Rodapé da listagem: `(◕‿◕)♡ 3 entries`, ou `zzz… no entries` se vazia.
-pub fn rodape_lista(n: usize) {
-    let f = Fluxo::Erro;
-    let quantas = match n {
+/// Listing footer: `(◕‿◕)♡ 3 entries`, or `zzz… no entries` if empty.
+pub fn footer_list(n: usize) {
+    let f = Flow::Error;
+    let how_many = match n {
         0 => "no entries".to_owned(),
         1 => "1 entry".to_owned(),
         n => format!("{n} entries"),
     };
-    if !enfeitado(f) {
-        linha(f, format!("{}.", capitalizar(&quantas)));
+    if !decorated(f) {
+        line(f, format!("{}.", capitalizar(&how_many)));
     } else if n == 0 {
-        linha(f, tom(f, Tom::Neutro, false, format!("{ZERADO} {quantas}")));
+        line(
+            f,
+            tone(f, Tone::Neutral, false, format!("{ZEROED} {how_many}")),
+        );
     } else {
-        linha(
+        line(
             f,
             format!(
                 "{} {}",
-                tom(f, Tom::Aviso, true, FELIZ),
-                tom(f, Tom::Neutro, false, quantas)
+                tone(f, Tone::Warning, true, HAPPY),
+                tone(f, Tone::Neutral, false, how_many)
             ),
         );
     }
@@ -286,83 +289,83 @@ fn capitalizar(s: &str) -> String {
     }
 }
 
-/// Texto que antecede um pedido na entrada (prompt), com o coração em cor.
-pub fn prompt_texto(texto: &str) -> String {
-    let f = Fluxo::Erro;
-    if enfeitado(f) {
+/// Text that precedes a request on input (prompt), with the heart in color.
+pub fn prompt_text(text: &str) -> String {
+    let f = Flow::Error;
+    if decorated(f) {
         format!(
             "{} {}",
-            tom(f, Tom::Destaque, true, MARCADOR),
-            tom(f, Tom::Texto, false, texto)
+            tone(f, Tone::Highlight, true, MARKER),
+            tone(f, Tone::Text, false, text)
         )
     } else {
-        texto.to_owned()
+        text.to_owned()
     }
 }
 
-/// Escreve um prompt estilizado na saída de erro, sem quebra de linha.
-pub fn prompt(texto: &str) {
-    anstream::eprint!("{}", prompt_texto(texto));
+/// Writes a styled prompt to the error output, without a line break.
+pub fn prompt(text: &str) {
+    anstream::eprint!("{}", prompt_text(text));
     let _ = anstream::stderr().flush();
 }
 
-/// Bloco da chave de recuperação. A chave fica sozinha numa linha.
-pub fn chave_de_recuperacao(chave: &str) {
-    let s = Fluxo::Saida;
-    linha(s, "");
-    if enfeitado(s) {
-        titulo(s, "RECOVERY KEY");
-        linha(s, "");
-        linha(s, format!("    {}", tom(s, Tom::Aviso, true, chave)));
-        linha(s, "");
-        linha(
+/// Recovery key block. The key stays alone on a line.
+pub fn recovery_key(key: &str) {
+    let s = Flow::Output;
+    line(s, "");
+    if decorated(s) {
+        title(s, "RECOVERY KEY");
+        line(s, "");
+        line(s, format!("    {}", tone(s, Tone::Warning, true, key)));
+        line(s, "");
+        line(
             s,
-            tom(
+            tone(
                 s,
-                Tom::Aviso,
+                Tone::Warning,
                 false,
-                format!("{FAISCA} Shown only now. Write it on paper and keep it away from this computer."),
+                format!("{SPARK} Shown only now. Write it on paper and keep it away from this computer."),
             ),
         );
     } else {
-        linha(
+        line(
             s,
             "RECOVERY KEY (shown only now; write it on paper and keep it away from this computer):",
         );
-        linha(s, "");
-        linha(s, format!("    {chave}"));
-        linha(s, "");
+        line(s, "");
+        line(s, format!("    {key}"));
+        line(s, "");
     }
-    linha(
+    line(
         s,
         "Without it and the master password, nobody can recover the vault.",
     );
 }
 
-/// Cores do `--help`, na paleta do Kotsu.
-pub fn estilos_clap() -> Styles {
+/// `--help` colors, in Kotsu's palette.
+pub fn clap_styles() -> Styles {
     Styles::styled()
-        .header(estilo(Tom::Destaque, true))
-        .usage(estilo(Tom::Destaque, true))
-        .literal(estilo(Tom::Secundaria, true))
-        .placeholder(estilo(Tom::Aviso, false))
-        .valid(estilo(Tom::Ok, false))
-        .invalid(estilo(Tom::Aviso, false))
-        .error(estilo(Tom::Erro, true))
+        .header(style(Tone::Highlight, true))
+        .usage(style(Tone::Highlight, true))
+        .literal(style(Tone::Secondary, true))
+        .placeholder(style(Tone::Warning, false))
+        .valid(style(Tone::Ok, false))
+        .invalid(style(Tone::Warning, false))
+        .error(style(Tone::Error, true))
 }
 
-/// Uma linha da tabela de entradas. A senha só vem preenchida com `--reveal`.
-pub struct LinhaTabela {
+/// A row of the entries table. The password is only filled in with `--reveal`.
+pub struct TableRow {
     pub id: String,
-    pub titulo: String,
-    pub usuario: String,
-    pub senha_vazia: bool,
-    pub senha: Option<String>,
-    pub data_senha: String,
-    pub etiquetas: Vec<String>,
+    pub title: String,
+    pub username: String,
+    pub password_empty: bool,
+    pub password: Option<String>,
+    pub password_date: String,
+    pub tags: Vec<String>,
 }
 
-fn cortar(s: &str, max: usize) -> String {
+fn cut(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         s.to_owned()
     } else {
@@ -372,92 +375,93 @@ fn cortar(s: &str, max: usize) -> String {
     }
 }
 
-/// Tabela de entradas no estilo do Kotsu (só em terminal): conta, usuário,
-/// senha oculta (ou revelada) e a data em que a senha foi definida.
-pub fn tabela_entradas(linhas: &[LinhaTabela], revelar: bool) {
-    let s = Fluxo::Saida;
-    let cab = ["ID", "Account", "User", "Password", "Set on", "Tags"];
-    let mut cel: Vec<[String; 6]> = Vec::new();
-    for l in linhas {
-        let senha = match (&l.senha, l.senha_vazia) {
-            (Some(p), _) if revelar => p.clone(),
+/// Entries table in the Kotsu style (terminal only): account, username,
+/// hidden (or revealed) password and the date the password was set.
+pub fn entry_table(lines: &[TableRow], reveal: bool) {
+    let s = Flow::Output;
+    let header = ["ID", "Account", "User", "Password", "Set on", "Tags"];
+    let mut cell: Vec<[String; 6]> = Vec::new();
+    for l in lines {
+        let password = match (&l.password, l.password_empty) {
+            (Some(p), _) if reveal => p.clone(),
             (_, true) => "(empty)".to_owned(),
             _ => "••••••••".to_owned(),
         };
-        cel.push([
+        cell.push([
             l.id.clone(),
-            cortar(&l.titulo, 30),
-            cortar(&l.usuario, 28),
-            senha,
-            l.data_senha.clone(),
-            cortar(&l.etiquetas.join(", "), 24),
+            cut(&l.title, 30),
+            cut(&l.username, 28),
+            password,
+            l.password_date.clone(),
+            cut(&l.tags.join(", "), 24),
         ]);
     }
-    let mut larg = cab.map(|c| c.chars().count());
-    for linha in &cel {
-        for (i, c) in linha.iter().enumerate() {
-            larg[i] = larg[i].max(c.chars().count());
+    let mut width = header.map(|c| c.chars().count());
+    for line in &cell {
+        for (i, c) in line.iter().enumerate() {
+            width[i] = width[i].max(c.chars().count());
         }
     }
-    let borda = |esq: &str, meio: &str, dir: &str| {
-        let partes: Vec<String> = larg.iter().map(|w| "─".repeat(w + 2)).collect();
-        tom(
+    let border = |left: &str, middle: &str, dir: &str| {
+        let parts: Vec<String> = width.iter().map(|w| "─".repeat(w + 2)).collect();
+        tone(
             s,
-            Tom::Neutro,
+            Tone::Neutral,
             false,
-            format!("{esq}{}{dir}", partes.join(meio)),
+            format!("{left}{}{dir}", parts.join(middle)),
         )
     };
-    let v = tom(s, Tom::Neutro, false, "│");
-    let montar = |valores: Vec<String>| {
-        let partes: Vec<String> = valores.into_iter().map(|c| format!(" {c} ")).collect();
-        format!("{v}{}{v}", partes.join(&v))
+    let v = tone(s, Tone::Neutral, false, "│");
+    let build = |values: Vec<String>| {
+        let parts: Vec<String> = values.into_iter().map(|c| format!(" {c} ")).collect();
+        format!("{v}{}{v}", parts.join(&v))
     };
-    let pad = |c: &str, i: usize| format!("{c:<w$}", w = larg[i]);
+    let pad = |c: &str, i: usize| format!("{c:<w$}", w = width[i]);
 
-    linha(s, borda("╭", "┬", "╮"));
-    linha(
+    line(s, border("╭", "┬", "╮"));
+    line(
         s,
-        montar(
-            cab.iter()
+        build(
+            header
+                .iter()
                 .enumerate()
-                .map(|(i, c)| tom(s, Tom::Secundaria, true, pad(c, i)))
+                .map(|(i, c)| tone(s, Tone::Secondary, true, pad(c, i)))
                 .collect(),
         ),
     );
-    linha(s, borda("├", "┼", "┤"));
-    for l in &cel {
-        let estilos = [
-            (Tom::Neutro, false),
-            (Tom::Texto, true),
-            (Tom::Secundaria, false),
-            (Tom::Aviso, revelar),
-            (Tom::Neutro, false),
-            (Tom::Aviso, false),
+    line(s, border("├", "┼", "┤"));
+    for l in &cell {
+        let styles = [
+            (Tone::Neutral, false),
+            (Tone::Text, true),
+            (Tone::Secondary, false),
+            (Tone::Warning, reveal),
+            (Tone::Neutral, false),
+            (Tone::Warning, false),
         ];
-        linha(
+        line(
             s,
-            montar(
+            build(
                 l.iter()
                     .enumerate()
-                    .map(|(i, c)| tom(s, estilos[i].0, estilos[i].1, pad(c, i)))
+                    .map(|(i, c)| tone(s, styles[i].0, styles[i].1, pad(c, i)))
                     .collect(),
             ),
         );
     }
-    linha(s, borda("╰", "┴", "╯"));
+    line(s, border("╰", "┴", "╯"));
 }
 
-/// Cor da paleta como trio RGB, para telas que desenham por conta própria.
-pub fn rgb(t: Tom) -> (u8, u8, u8) {
-    let RgbColor(r, g, b) = cor(t);
+/// Palette color as an RGB triple, for screens that draw on their own.
+pub fn rgb(t: Tone) -> (u8, u8, u8) {
+    let RgbColor(r, g, b) = color(t);
     (r, g, b)
 }
 
-/// Fundo e painel (linha selecionada) da paleta, como trios RGB.
-pub fn fundos() -> ((u8, u8, u8), (u8, u8, u8)) {
-    let p = paleta();
-    let RgbColor(a, b, c) = p.fundo;
-    let RgbColor(d, e, f) = p.painel;
+/// Background and panel (selected row) of the palette, as RGB triples.
+pub fn backgrounds() -> ((u8, u8, u8), (u8, u8, u8)) {
+    let p = palette();
+    let RgbColor(a, b, c) = p.background;
+    let RgbColor(d, e, f) = p.panel;
     ((a, b, c), (d, e, f))
 }

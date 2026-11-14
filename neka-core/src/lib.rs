@@ -1,5 +1,5 @@
-//! Núcleo do neka. Camadas e dependências permitidas estão na tabela de camadas do README
-//! e são impostas por `tests/camadas.rs`.
+//! neka core. Layers and allowed dependencies are in the layer table of the README
+//! and are enforced by `tests/layers.rs`.
 
 pub mod api;
 pub mod crypto;

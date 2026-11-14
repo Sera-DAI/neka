@@ -1,4 +1,4 @@
-//! Entrada de segredos e área de transferência (dependem da plataforma).
+//! Secret input and clipboard (platform dependent).
 
 use std::io::{BufRead, IsTerminal, Write};
 
@@ -6,21 +6,21 @@ use zeroize::Zeroizing;
 
 use crate::ui;
 
-/// Lê um segredo sem eco. Sem terminal (script ou teste), lê uma linha da
-/// entrada padrão. Nunca vem por argumento (regra do projeto).
-pub fn segredo(prompt: &str) -> Result<Zeroizing<String>, String> {
+/// Reads a secret without echo. With no terminal (script or test), reads a line from
+/// standard input. Never comes as an argument (project rule).
+pub fn secret(prompt: &str) -> Result<Zeroizing<String>, String> {
     if std::io::stdin().is_terminal() {
-        ler_sem_eco(prompt)
+        read_hidden(prompt)
     } else {
         eprint!("{prompt}");
-        linha()
+        line()
     }
 }
 
-/// Lê do terminal sem eco. Com enfeite, o prompt é escrito por `ui` (com cor);
-/// sem enfeite, deixa o `rpassword` escrevê-lo, como antes.
-fn ler_sem_eco(prompt: &str) -> Result<Zeroizing<String>, String> {
-    let r = if ui::enfeitado(ui::Fluxo::Erro) {
+/// Reads from the terminal without echo. With decoration, the prompt is written by `ui` (in color);
+/// without decoration, lets `rpassword` write it, as before.
+fn read_hidden(prompt: &str) -> Result<Zeroizing<String>, String> {
+    let r = if ui::decorated(ui::Flow::Error) {
         ui::prompt(prompt);
         rpassword::read_password()
     } else {
@@ -30,8 +30,8 @@ fn ler_sem_eco(prompt: &str) -> Result<Zeroizing<String>, String> {
         .map_err(|_| "could not read from the terminal".to_owned())
 }
 
-/// Lê uma linha comum (confirmações).
-pub fn linha() -> Result<Zeroizing<String>, String> {
+/// Reads a plain line (confirmations).
+pub fn line() -> Result<Zeroizing<String>, String> {
     let mut s = Zeroizing::new(String::new());
     std::io::stdin()
         .lock()
@@ -43,18 +43,18 @@ pub fn linha() -> Result<Zeroizing<String>, String> {
     Ok(s)
 }
 
-pub fn confirmar(pergunta: &str) -> Result<bool, String> {
-    // No terminal, lê pelo mesmo caminho da senha (rpassword): no Windows,
-    // ler a linha pela entrada padrão depois do prompt de senha podia
-    // ficar esperando para sempre. A resposta é ecoada em seguida.
+pub fn confirm(question: &str) -> Result<bool, String> {
+    // On the terminal, reads through the same path as the password (rpassword): on Windows,
+    // reading the line from standard input after the password prompt could
+    // wait forever. The answer is echoed afterwards.
     let r = if std::io::stdin().is_terminal() {
-        let r = ler_sem_eco(&format!("{pergunta} [y/N] "))?;
+        let r = read_hidden(&format!("{question} [y/N] "))?;
         eprintln!("{}", r.trim());
         r
     } else {
-        eprint!("{pergunta} [y/N] ");
+        eprint!("{question} [y/N] ");
         let _ = std::io::stderr().flush();
-        linha()?
+        line()?
     };
     Ok(matches!(
         r.trim().to_lowercase().as_str(),
@@ -62,56 +62,56 @@ pub fn confirmar(pergunta: &str) -> Result<bool, String> {
     ))
 }
 
-/// Pede a senha nova duas vezes. Recusa menos de 8 caracteres e avisa
-/// abaixo de 12.
-pub fn senha_nova(rotulo: &str) -> Result<Zeroizing<String>, String> {
-    let a = segredo(&format!("{rotulo}: "))?;
+/// Asks for the new password twice. Refuses fewer than 8 characters and warns
+/// below 12.
+pub fn new_password(label: &str) -> Result<Zeroizing<String>, String> {
+    let a = secret(&format!("{label}: "))?;
     if a.chars().count() < 8 {
         return Err("the password must have at least 8 characters".into());
     }
-    let b = segredo("Repeat: ")?;
+    let b = secret("Repeat: ")?;
     if a != b {
         return Err("the passwords do not match".into());
     }
     if a.chars().count() < 12 {
-        ui::aviso("passwords shorter than 12 characters are weak for a master password.");
+        ui::warning("passwords shorter than 12 characters are weak for a master password.");
     }
     Ok(a)
 }
 
-/// Coloca texto na área de transferência. No Windows, pede para ficar fora do
-/// histórico (Win+V) e da nuvem.
-pub fn colocar(cb: &mut arboard::Clipboard, texto: &str) -> Result<(), String> {
+/// Puts text on the clipboard. On Windows, asks to stay out of the
+/// history (Win+V) and the cloud.
+pub fn put(cb: &mut arboard::Clipboard, text: &str) -> Result<(), String> {
     #[cfg(windows)]
     {
         use arboard::SetExtWindows;
         cb.set()
             .exclude_from_history()
             .exclude_from_cloud()
-            .text(texto)
+            .text(text)
             .map_err(|_| "could not copy".to_owned())
     }
     #[cfg(not(windows))]
-    cb.set_text(texto).map_err(|_| "could not copy".to_owned())
+    cb.set_text(text).map_err(|_| "could not copy".to_owned())
 }
 
-/// Copia para a área de transferência e limpa depois de `segundos`, se o
-/// conteúdo ainda for o mesmo. No Windows, pede para ficar fora do histórico
-/// (Win+V) e da nuvem.
-pub fn copiar(texto: &str, segundos: u64) -> Result<(), String> {
+/// Copies to the clipboard and clears after `seconds`, if the
+/// content is still the same. On Windows, asks to stay out of the history
+/// (Win+V) and the cloud.
+pub fn copy(text: &str, seconds: u64) -> Result<(), String> {
     let mut cb = arboard::Clipboard::new().map_err(|_| "clipboard unavailable".to_owned())?;
-    colocar(&mut cb, texto)?;
-    if segundos == 0 {
+    put(&mut cb, text)?;
+    if seconds == 0 {
         return Ok(());
     }
-    ui::sucesso(
-        ui::Fluxo::Erro,
-        format!("Copied. The clipboard will be cleared in {segundos} s (Ctrl+C to leave earlier, without clearing)."),
+    ui::success(
+        ui::Flow::Error,
+        format!("Copied. The clipboard will be cleared in {seconds} s (Ctrl+C to leave earlier, without clearing)."),
     );
-    std::thread::sleep(std::time::Duration::from_secs(segundos));
-    if cb.get_text().ok().as_deref() == Some(texto) {
+    std::thread::sleep(std::time::Duration::from_secs(seconds));
+    if cb.get_text().ok().as_deref() == Some(text) {
         let _ = cb.clear();
-        ui::dica(ui::Fluxo::Erro, "Clipboard cleared.");
+        ui::hint(ui::Flow::Error, "Clipboard cleared.");
     }
     Ok(())
 }
